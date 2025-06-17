@@ -89,9 +89,9 @@ def initialize_database(db_path="data/urban_mobility.db"):
     """)
 
     conn.commit()
-    
-    # Insert hard-coded super admin if not exists
-    cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", ('super_admin',))
+      # Insert hard-coded super admin if not exists
+    encrypted_username_check = encrypt_data('super_admin')
+    cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (encrypted_username_check,))
     if cursor.fetchone()[0] == 0:
         encrypted_username = encrypt_data('super_admin')
         password_hash = hash_password('Admin_123?')
@@ -105,6 +105,9 @@ def initialize_database(db_path="data/urban_mobility.db"):
         """, (encrypted_username, password_hash, 'super_admin', encrypted_first_name, encrypted_last_name, registration_date))
         
         conn.commit()
+        print("Super admin account created.")
+    else:
+        print("Super admin account already exists.")
     
     conn.close()
 if __name__ == "__main__":
