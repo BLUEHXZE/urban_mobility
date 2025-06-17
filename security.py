@@ -1,8 +1,24 @@
 import bcrypt
+import os
 from cryptography.fernet import Fernet
 
-# You should store this key securely! Save it to a file if needed.
-SECRET_KEY = Fernet.generate_key()
+# Secure key management
+KEY_FILE = "data/encryption.key"
+
+def _load_or_create_key():
+    """Load existing key or create new one"""
+    os.makedirs(os.path.dirname(KEY_FILE), exist_ok=True)
+    
+    if os.path.exists(KEY_FILE):
+        with open(KEY_FILE, 'rb') as f:
+            return f.read()
+    else:
+        key = Fernet.generate_key()
+        with open(KEY_FILE, 'wb') as f:
+            f.write(key)
+        return key
+
+SECRET_KEY = _load_or_create_key()
 cipher = Fernet(SECRET_KEY)
 
 def hash_password(password: str) -> str:

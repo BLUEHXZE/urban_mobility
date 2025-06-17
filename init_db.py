@@ -1,6 +1,12 @@
 import sqlite3
+import os
+from datetime import datetime
+from security import hash_password, encrypt_data
 
-def initialize_database(db_path="urban_mobility.db"):
+def initialize_database(db_path="data/urban_mobility.db"):
+    # Ensure data directory exists
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -83,6 +89,23 @@ def initialize_database(db_path="urban_mobility.db"):
     """)
 
     conn.commit()
+    
+    # Insert hard-coded super admin if not exists
+    cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", ('super_admin',))
+    if cursor.fetchone()[0] == 0:
+        encrypted_username = encrypt_data('super_admin')
+        password_hash = hash_password('Admin_123?')
+        encrypted_first_name = encrypt_data('Super')
+        encrypted_last_name = encrypt_data('Administrator')
+        registration_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor.execute("""
+        INSERT INTO users (username, password_hash, role, first_name, last_name, registration_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, (encrypted_username, password_hash, 'super_admin', encrypted_first_name, encrypted_last_name, registration_date))
+        
+        conn.commit()
+    
     conn.close()
 if __name__ == "__main__":
     initialize_database()

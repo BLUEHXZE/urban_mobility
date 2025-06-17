@@ -1,0 +1,41 @@
+Urban Mobility Backend System
+Final Assignment - Software Quality (INFSWQ01-A | INFSWQ21-A)
+Educational Period 4 [2024-2025]
+
+Team Members:
+Name: [Student Name]
+Student Number: [Student Number]
+
+Project Information:
+- Assignment: Urban Mobility Backend System
+- Course: Analysis 8: Software Quality
+- Version: 1.0
+- Date: June 17, 2025
+
+System Overview:
+This project implements a secure backend system for Urban Mobility, featuring:
+- Role-based access control (Super Admin, System Admin, Service Engineer)
+- Encrypted data storage for sensitive information
+- Comprehensive input validation and SQL injection protection
+- Activity logging with suspicious behavior detection
+- Secure backup and restore functionality
+
+Technical Implementation:
+- Language: Python 3.11+
+- Database: SQLite3 with encryption
+- Security: bcrypt for password hashing, Fernet for data encryption
+- Architecture: MVC pattern with service layer
+- Testing: Console-based interface for admin operations
+
+Security Features:
+- Input validation using whitelisting approach
+- Parameterized SQL queries to prevent injection attacks
+- Encrypted storage of sensitive data (usernames, PII, logs)
+- Password hashing with bcrypt
+- Role-based authorization with centralized access control
+- Comprehensive activity logging with encryption
+- Suspicious activity detection and alerting
+
+Compliance:
+This system meets all requirements specified in the assignment document
+and implements industry best practices for secure software development.

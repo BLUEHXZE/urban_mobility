@@ -24,8 +24,15 @@ class AuthService:
                 print("\nLogin Required")
                 
                 username = input("Username: ").strip()
-                # For testing purposes, show password input
-                password = input("Password: ").strip()
+                try:
+                    password = getpass.getpass("Password: ")
+                except (EOFError, KeyboardInterrupt):
+                    print("\nPassword input cancelled.")
+                    return None
+                except Exception:
+                    # Fallback to regular input if getpass fails
+                    print("Note: Password will be visible")
+                    password = input("Password: ").strip()
                 
                 if not username:
                     print("❌ Username is required")
