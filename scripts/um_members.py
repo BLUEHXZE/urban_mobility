@@ -8,6 +8,7 @@ import os
 import sys
 from datetime import datetime
 from typing import Optional
+import traceback
 
 # ✅ Ensure project root is added to module path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -21,7 +22,7 @@ from core.services.backup_service import BackupService
 from core.models.user_model import User, UserModel
 from core.models.traveller_model import TravellerModel
 
-from core.utils.validators import ValidationError
+from core.utils.validators import ValidationError, InputValidator
 
 # Include the rest of the original code below this (assumed already working)
 class UrbanMobilityApp:
@@ -88,84 +89,51 @@ class UrbanMobilityApp:
         print(f"🏠 Main Menu - Welcome {user.first_name} {user.last_name}")
         print(f"Role: {user.role.replace('_', ' ').title()}")
         print("="*50)
-        
+        print("Enter the number of the option you want to select and press Enter.")
+
+        menu_options = []
         # Common options for all roles
-        print("1. 🔐 Change Password") if user.username != 'super_admin' else None
-        
+        if user.username != 'super_admin':
+            menu_options.append(("🔐 Change Password", self.auth.change_password))
         # Scooter management (all roles)
-        print("2. 🛴 View Scooters")
-        print("3. 🔍 Search Scooters")
-        print("4. 📝 Update Scooter")
-        
+        menu_options.append(("🛴 View Scooters", lambda: ScooterService.list_scooters(user)))
+        menu_options.append(("🔍 Search Scooters", lambda: ScooterService.search_scooters(user)))
+        menu_options.append(("📝 Update Scooter", lambda: ScooterService.update_scooter_interactive(user)))
         if user.role in ['super_admin', 'system_admin']:
-            print("5. ➕ Add New Scooter")
-            print("6. ❌ Delete Scooter")
-        
-        # User management
-        if user.role in ['super_admin', 'system_admin']:
-            print("7. 👥 User Management")
-        
-        # Traveller management (Super Admin and System Admin)
-        if user.role in ['super_admin', 'system_admin']:
-            print("8. 🚶 Traveller Management")
-        
-        # System operations
-        if user.role in ['super_admin', 'system_admin']:
-            print("9. 📊 View System Logs")
-            print("10. 💾 Backup & Restore")
-        
+            menu_options.append(("➕ Add New Scooter", lambda: ScooterService.create_scooter_interactive(user)))
+            menu_options.append(("❌ Delete Scooter", lambda: ScooterService.delete_scooter_interactive(user)))
+            menu_options.append(("👥 User Management", lambda: self.user_management_menu(user)))
+            menu_options.append(("🚶 Traveller Management", lambda: self.traveller_management_menu(user)))
+            menu_options.append(("📊 View System Logs", lambda: self.show_system_logs(user)))
+            menu_options.append(("💾 Backup & Restore", lambda: self.backup_restore_menu(user)))
+        for idx, (label, _) in enumerate(menu_options, 1):
+            print(f"{idx}. {label}")
         print("0. 🚪 Logout")
-    
+
+        # Store for use in handle_main_menu_choice
+        self._menu_options = menu_options
+
     def handle_main_menu_choice(self, user: User, choice: str) -> bool:
         """Handle main menu selection"""
         try:
-            if choice == '1' and user.username != 'super_admin':
-                self.auth.change_password()
-                self.auth.pause()
-            
-            elif choice == '2':
-                ScooterService.list_scooters(user)
-                self.auth.pause()
-            
-            elif choice == '3':
-                ScooterService.search_scooters(user)
-                self.auth.pause()
-            
-            elif choice == '4':
-                ScooterService.update_scooter_interactive(user)
-                self.auth.pause()
-            
-            elif choice == '5' and user.role in ['super_admin', 'system_admin']:
-                ScooterService.create_scooter_interactive(user)
-                self.auth.pause()
-            
-            elif choice == '6' and user.role in ['super_admin', 'system_admin']:
-                ScooterService.delete_scooter_interactive(user)
-                self.auth.pause()
-            
-            elif choice == '7' and user.role in ['super_admin', 'system_admin']:
-                self.user_management_menu(user)
-            
-            elif choice == '8' and user.role in ['super_admin', 'system_admin']:
-                self.traveller_management_menu(user)
-            
-            elif choice == '9' and user.role in ['super_admin', 'system_admin']:
-                self.show_system_logs(user)
-                self.auth.pause()
-            
-            elif choice == '10' and user.role in ['super_admin', 'system_admin']:
-                self.backup_restore_menu(user)
-            
-            elif choice == '0':
+            if choice == '0':
                 if self.confirm_exit():
                     return False
-            
+                return True
+            try:
+                idx = int(choice)
+            except ValueError:
+                print("❌ Invalid option or insufficient permissions")
+                self.auth.pause()
+                return True
+            if 1 <= idx <= len(self._menu_options):
+                action = self._menu_options[idx-1][1]
+                action()
+                self.auth.pause()
             else:
                 print("❌ Invalid option or insufficient permissions")
                 self.auth.pause()
-            
             return True
-            
         except Exception as e:
             print(f"❌ Error: {e}")
             self.auth.pause()
@@ -303,16 +271,46 @@ class UrbanMobilityApp:
             
         except Exception as e:
             print(f"❌ Error: {e}")
+            traceback.print_exc()
             self.auth.pause()
     
     def add_user(self, user: User):
         """Add new user"""
         try:
             print("\n--- Add New User ---")
-            
-            username = input("Username (8-10 chars): ").strip()
-            password = input("Password (12-30 chars): ").strip()
-            
+            print("\nUsername requirements:")
+            print("- Must be unique and have a length of at least 8 characters")
+            print("- Must be no longer than 10 characters")
+            print("- Must be started with a letter or underscore (_)")
+            print("- Can contain letters (a-z), numbers (0-9), underscores (_), apostrophes ('), and periods (.)")
+            print("- No distinction between lowercase and uppercase letters (case-insensitive)")
+            print("")
+            print("Password requirements:")
+            print("- Must have a length of at least 12 characters")
+            print("- Must be no longer than 30 characters")
+            print("- Can contain letters (a-z), (A-Z), numbers (0-9), Special characters such as ~!@#$%&_-+=`|\\(){}[]:;'\"<>,.?/")
+            print("- Must have a combination of at least one lowercase letter, one uppercase letter, one digit, and one special character")
+            print("")
+            # Username input and validation
+            while True:
+                username = input("Username (8-10 chars): ").strip()
+                try:
+                    InputValidator.validate_username(username)
+                    # Check uniqueness
+                    if UserModel.username_exists(username):
+                        print("❌ Username already exists. Please choose another.")
+                        continue
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
+            # Password input and validation
+            while True:
+                password = input("Password (12-30 chars): ").strip()
+                try:
+                    InputValidator.validate_password(password)
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
             print("Available roles:")
             if user.role == 'super_admin':
                 print("1. System Administrator")
@@ -323,17 +321,13 @@ class UrbanMobilityApp:
                 print("1. Service Engineer")
                 role_choice = input("Select role (1): ").strip()
                 role = 'service_engineer'
-            
             first_name = input("First Name: ").strip()
             last_name = input("Last Name: ").strip()
-            
             if UserModel.create_user(user, username, password, role, first_name, last_name):
                 print("✅ User created successfully!")
             else:
                 print("❌ Failed to create user")
-            
             self.auth.pause()
-            
         except ValidationError as e:
             print(f"❌ Validation error: {e}")
             self.auth.pause()
@@ -342,53 +336,143 @@ class UrbanMobilityApp:
             self.auth.pause()
     
     def update_user_profile(self, user: User):
-        """Update user profile"""
+        """Update user profile by selecting from a list of users (by ID, no username prompt)"""
         try:
-            target_username = input("Username to update: ").strip()
-            first_name = input("New First Name: ").strip()
-            last_name = input("New Last Name: ").strip()
-            
-            if UserModel.update_user_profile(user, target_username, first_name, last_name):
-                print("✅ Profile updated successfully!")
+            users = UserModel.get_all_users(user)
+            if not users:
+                print("No users found.")
+                self.auth.pause()
+                return
+            print(f"\n--- Users List ({len(users)} total) ---")
+            print(f"{'ID':<5} {'Username':<12} {'Role':<15} {'Name':<25} {'Registered':<12}")
+            print("-" * 75)
+            for u in users:
+                role_display = u.role.replace('_', ' ').title()
+                name = f"{u.first_name} {u.last_name}"
+                reg_date = u.registration_date[:10] if u.registration_date else "N/A"
+                print(f"{u.id:<5} {u.username:<12} {role_display:<15} {name:<25} {reg_date:<12}")
+            user_id_input = input("\nEnter the ID of the user to update: ").strip()
+            try:
+                user_id = int(user_id_input)
+            except ValueError:
+                print("❌ Invalid user ID.")
+                self.auth.pause()
+                return
+            target_user = next((u for u in users if u.id == user_id), None)
+            if not target_user:
+                print(f"❌ No user found with ID {user_id}.")
+                self.auth.pause()
+                return
+            print(f"Updating user: {target_user.username} ({target_user.first_name} {target_user.last_name})")
+            first_name = input(f"New First Name [{target_user.first_name}]: ").strip() or target_user.first_name
+            last_name = input(f"New Last Name [{target_user.last_name}]: ").strip() or target_user.last_name
+            if first_name == target_user.first_name and last_name == target_user.last_name:
+                print("No changes detected. Profile not updated.")
             else:
-                print("❌ Failed to update profile")
-            
+                try:
+                    result = UserModel.update_user_profile_by_id(user, user_id, first_name, last_name)
+                    if result:
+                        print("✅ Profile updated successfully!")
+                    else:
+                        print("❌ Update failed (database error or insufficient permissions)")
+                except Exception as update_exc:
+                    print(f"❌ Update failed with error: {update_exc}")
+                    traceback.print_exc()
             self.auth.pause()
-            
         except Exception as e:
             print(f"❌ Error: {e}")
             self.auth.pause()
     
     def reset_user_password(self, user: User):
-        """Reset user password"""
+        """Reset user password by selecting from a list of users (by ID)"""
         try:
-            target_username = input("Username to reset password: ").strip()
+            users = UserModel.get_all_users(user)
+            if not users:
+                print("No users found.")
+                self.auth.pause()
+                return
+            print(f"\n--- Users List ({len(users)} total) ---")
+            print(f"{'ID':<5} {'Username':<12} {'Role':<15} {'Name':<25} {'Registered':<12}")
+            print("-" * 75)
+            for u in users:
+                role_display = u.role.replace('_', ' ').title()
+                name = f"{u.first_name} {u.last_name}"
+                reg_date = u.registration_date[:10] if u.registration_date else "N/A"
+                print(f"{u.id:<5} {u.username:<12} {role_display:<15} {name:<25} {reg_date:<12}")
+            user_id_input = input("\nEnter the ID of the user to reset password: ").strip()
+            try:
+                user_id = int(user_id_input)
+            except ValueError:
+                print("❌ Invalid user ID.")
+                self.auth.pause()
+                return
+            target_user = next((u for u in users if u.id == user_id), None)
+            if not target_user:
+                print(f"❌ No user found with ID {user_id}.")
+                self.auth.pause()
+                return
+            print(f"Resetting password for user: {target_user.username} ({target_user.first_name} {target_user.last_name})")
             new_password = input("New password: ").strip()
-            
-            if UserModel.reset_user_password(user, target_username, new_password):
-                print("✅ Password reset successfully!")
-            else:
-                print("❌ Failed to reset password")
-            
+            try:
+                result = UserModel.reset_user_password_by_id(user, user_id, new_password)
+                if result:
+                    print("✅ Password reset successfully!")
+                else:
+                    print("❌ Failed to reset password (database error or insufficient permissions)")
+            except Exception as reset_exc:
+                print(f"❌ Password reset failed with error: {reset_exc}")
+                traceback.print_exc()
             self.auth.pause()
-            
         except Exception as e:
             print(f"❌ Error: {e}")
             self.auth.pause()
     
     def delete_user(self, user: User):
-        """Delete user"""
+        """Delete user by selecting from a list of users"""
         try:
-            target_username = input("Username to delete: ").strip()
-            
-            if self.auth.confirm_action(f"Delete user '{target_username}'?"):
-                if UserModel.delete_user(user, target_username):
+            users = UserModel.get_all_users(user)
+            if not users:
+                print("No users found.")
+                self.auth.pause()
+                return
+            print(f"\n--- Users List ({len(users)} total) ---")
+            print(f"{'ID':<5} {'Username':<12} {'Role':<15} {'Name':<25} {'Registered':<12}")
+            print("-" * 75)
+            for u in users:
+                role_display = u.role.replace('_', ' ').title()
+                name = f"{u.first_name} {u.last_name}"
+                reg_date = u.registration_date[:10] if u.registration_date else "N/A"
+                print(f"{u.id:<5} {u.username:<12} {role_display:<15} {name:<25} {reg_date:<12}")
+            user_id_input = input("\nEnter the ID of the user to delete: ").strip()
+            try:
+                user_id = int(user_id_input)
+            except ValueError:
+                print("❌ Invalid user ID.")
+                self.auth.pause()
+                return
+            target_user = next((u for u in users if u.id == user_id), None)
+            if not target_user:
+                print(f"❌ No user found with ID {user_id}.")
+                self.auth.pause()
+                return
+            if target_user.username == 'super_admin':
+                print("❌ Cannot delete super admin.")
+                self.auth.pause()
+                return
+            if not self.auth.confirm_action(f"Delete user '{target_user.username}' ({target_user.first_name} {target_user.last_name})?"):
+                print("Cancelled.")
+                self.auth.pause()
+                return
+            try:
+                result = UserModel.delete_user_by_id(user, user_id)
+                if result:
                     print("✅ User deleted successfully!")
                 else:
-                    print("❌ Failed to delete user")
-            
+                    print("❌ Failed to delete user (database error or insufficient permissions)")
+            except Exception as delete_exc:
+                print(f"❌ Delete failed with error: {delete_exc}")
+                traceback.print_exc()
             self.auth.pause()
-            
         except Exception as e:
             print(f"❌ Error: {e}")
             self.auth.pause()

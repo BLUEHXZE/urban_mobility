@@ -1,47 +1,62 @@
 #!/usr/bin/env python3
 """
-Database cleanup utility - removes duplicate super_admin accounts
+Database cleanup utility - removes duplicate users (by username)
 """
 
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from init_db import initialize_database
-from db.dbconn import db
+from core.db.dbconn import db
 from security import encrypt_data, decrypt_data
 
-def cleanup_duplicate_super_admins():
-    """Remove duplicate super_admin accounts, keeping only the first one"""
+def cleanup_duplicate_users():
+    """Remove duplicate users by username, keeping only the first occurrence of each username"""
     
-    print("Checking for duplicate super_admin accounts...")
+    print("Checking for duplicate users by username...")
     
-    # Find all super_admin accounts
-    query = "SELECT id, username, role FROM users WHERE role = 'super_admin'"
+    # Get all users (id, username, role)
+    query = "SELECT id, username, role FROM users ORDER BY id ASC"
     results = db.execute_query(query)
     
-    if len(results) <= 1:
-        print(f"✅ Found {len(results)} super_admin account(s) - no cleanup needed.")
+    seen_usernames = set()
+    duplicates = []
+    
+    for row in results:
+        user_id = row[0]
+        enc_username = row[1]
+        
+        try:
+            username = decrypt_data(enc_username)
+        except Exception:
+            username = enc_username  # fallback if decryption fails
+        
+        if username in seen_usernames:
+            duplicates.append(user_id)
+        else:
+            seen_usernames.add(username)
+    
+    if not duplicates:
+        print("✅ No duplicate users found.")
         return
     
-    print(f"⚠️  Found {len(results)} super_admin accounts - cleaning up duplicates...")
+    print(f"⚠️  Found {len(duplicates)} duplicate user(s) - cleaning up...")
     
-    # Keep the first one, delete the rest
-    keep_id = results[0][0]
-    
-    for result in results[1:]:
-        duplicate_id = result[0]
-        print(f"Deleting duplicate super_admin with ID: {duplicate_id}")
+    for dup_id in duplicates:
+        print(f"Deleting duplicate user with ID: {dup_id}")
         
         delete_query = "DELETE FROM users WHERE id = ?"
-        db.execute_non_query(delete_query, (duplicate_id,))
+        db.execute_non_query(delete_query, (dup_id,))
     
-    print("✅ Cleanup complete!")
-    
-    # Verify cleanup
-    remaining_query = "SELECT COUNT(*) FROM users WHERE role = 'super_admin'"
+    print("✅ Duplicate user cleanup complete!")
+    # Reset AUTOINCREMENT sequence if only one user remains
+    remaining_query = "SELECT COUNT(*) FROM users"
     count = db.execute_scalar(remaining_query)
-    print(f"Super_admin accounts remaining: {count}")
+    print(f"Users remaining: {count}")
+    if count == 1:
+        print("Resetting AUTOINCREMENT sequence for users table to 1...")
+        db.execute_non_query("UPDATE sqlite_sequence SET seq = 1 WHERE name = 'users'")
+        print("Sequence reset. Next user will have id=2.")
 
 def list_all_users():
     """List all users in the database for verification"""
@@ -72,14 +87,11 @@ if __name__ == "__main__":
     print("Urban Mobility Database Cleanup Utility")
     print("=" * 40)
     
-    # Don't initialize database - just work with existing one
-    # initialize_database()
-    
     # Show current state
     list_all_users()
     
-    # Clean up duplicates
-    cleanup_duplicate_super_admins()
+    # Clean up all duplicate users
+    cleanup_duplicate_users()
     
     # Show final state
     print("\n--- After Cleanup ---")

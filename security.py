@@ -1,6 +1,8 @@
 import bcrypt
 import os
 from cryptography.fernet import Fernet
+import hmac
+import hashlib
 
 # Secure key management
 KEY_FILE = "data/encryption.key"
@@ -32,3 +34,8 @@ def encrypt_data(plaintext: str) -> str:
 
 def decrypt_data(ciphertext: str) -> str:
     return cipher.decrypt(ciphertext.encode()).decode()
+
+def encrypt_username_deterministic(username: str) -> str:
+    """Deterministically encrypt (hash) a username for storage and lookup."""
+    # Use HMAC-SHA256 with the SECRET_KEY for deterministic, keyed pseudonymization
+    return hmac.new(SECRET_KEY, username.lower().encode(), hashlib.sha256).hexdigest()

@@ -2,7 +2,7 @@ from typing import List, Optional
 from core.models.scooter_model import Scooter, ScooterModel
 from core.models.user_model import User
 from core.services.log_service import LogService
-from core.utils.validators import ValidationError
+from core.utils.validators import ValidationError, InputValidator
 
 class ScooterService:
     """Service for scooter operations with proper authorization"""
@@ -16,37 +16,151 @@ class ScooterService:
         
         try:
             print("\n--- Add New Scooter ---")
+            print("\nScooter field requirements:")
+            print("- Brand: Only letters, spaces, hyphens, apostrophes, max 50 chars, required")
+            print("- Model: Only letters, spaces, hyphens, apostrophes, max 50 chars, required")
+            print("- Serial Number: 10-17 alphanumeric characters, unique, required")
+            print("- Top Speed: Integer, 1-100 km/h, required")
+            print("- Battery Capacity: Integer, 100-10000 Wh, required")
+            print("- State of Charge (SoC): Integer, 0-100%, required")
+            print("- Minimum SoC: Integer, 0-100%, must be less than Maximum SoC, required")
+            print("- Maximum SoC: Integer, 0-100%, must be greater than Minimum SoC, required")
+            print("- Current SoC must be between min and max SoC")
+            print("- Latitude: Float, 51.8–52.0 (Rotterdam region), 5 decimal places, required")
+            print("- Longitude: Float, 4.3–4.6 (Rotterdam region), 5 decimal places, required")
+            print("- Mileage: Integer, 0–999999 km, default 0")
+            print("- Last Maintenance Date: Optional, format YYYY-MM-DD")
+            print("")
             
-            brand = input("Brand: ").strip()
-            model = input("Model: ").strip()
-            serial_number = input("Serial Number (10-17 chars): ").strip()
+            # Brand
+            while True:
+                brand = input("Brand: ").strip()
+                try:
+                    brand = InputValidator.validate_name(brand, "Brand")
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
             
-            top_speed = input("Top Speed (km/h): ").strip()
-            battery_capacity = input("Battery Capacity (Wh): ").strip()
-            soc = input("Current State of Charge (%): ").strip()
-            soc_min = input("Minimum SoC (%): ").strip()
-            soc_max = input("Maximum SoC (%): ").strip()
+            # Model
+            while True:
+                model = input("Model: ").strip()
+                try:
+                    model = InputValidator.validate_name(model, "Model")
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
             
-            latitude = input("Latitude (5 decimal places): ").strip()
-            longitude = input("Longitude (5 decimal places): ").strip()
+            # Serial Number
+            while True:
+                serial_number = input("Serial Number (10-17 chars): ").strip()
+                try:
+                    serial_number = InputValidator.validate_serial_number(serial_number)
+                    # Check uniqueness (simulate DB check)
+                    from core.models.scooter_model import ScooterModel
+                    if hasattr(ScooterModel, 'serial_exists') and ScooterModel.serial_exists(serial_number):
+                        print("❌ Serial number already exists. Please choose another.")
+                        continue
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
             
-            mileage = input("Current Mileage (km, default 0): ").strip() or "0"
-            maintenance_date = input("Last Maintenance Date (YYYY-MM-DD, optional): ").strip()
+            # Top Speed
+            while True:
+                top_speed = input("Top Speed (km/h): ").strip()
+                try:
+                    top_speed = InputValidator.validate_integer(top_speed, 1, 100, "Top speed")
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
             
-            # Convert numeric inputs
+            # Battery Capacity
+            while True:
+                battery_capacity = input("Battery Capacity (Wh): ").strip()
+                try:
+                    battery_capacity = InputValidator.validate_integer(battery_capacity, 100, 10000, "Battery capacity")
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
+            
+            # State of Charge
+            while True:
+                soc = input("Current State of Charge (%): ").strip()
+                try:
+                    soc = InputValidator.validate_integer(soc, 0, 100, "State of Charge")
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
+            
+            # Minimum SoC
+            while True:
+                soc_min = input("Minimum SoC (%): ").strip()
+                try:
+                    soc_min = InputValidator.validate_integer(soc_min, 0, 100, "Minimum SoC")
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
+            
+            # Maximum SoC
+            while True:
+                soc_max = input("Maximum SoC (%): ").strip()
+                try:
+                    soc_max = InputValidator.validate_integer(soc_max, 0, 100, "Maximum SoC")
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
+            
+            # Check SoC logic
+            if soc_min >= soc_max:
+                print("❌ Minimum SoC must be less than Maximum SoC")
+                return False
+            if not (soc_min <= soc <= soc_max):
+                print("❌ Current SoC must be between minimum and maximum SoC")
+                return False
+            
+            # Latitude
+            while True:
+                latitude = input("Latitude (5 decimal places): ").strip()
+                try:
+                    latitude = float(latitude)
+                    # Will be validated later
+                    break
+                except ValueError:
+                    print("❌ Latitude must be a number")
+            
+            # Longitude
+            while True:
+                longitude = input("Longitude (5 decimal places): ").strip()
+                try:
+                    longitude = float(longitude)
+                    # Will be validated later
+                    break
+                except ValueError:
+                    print("❌ Longitude must be a number")
+            
+            # Validate coordinates
             try:
-                top_speed = int(top_speed)
-                battery_capacity = int(battery_capacity)
-                soc = int(soc)
-                soc_min = int(soc_min)
-                soc_max = int(soc_max)
-                latitude = float(latitude)
-                longitude = float(longitude)
-                mileage = int(mileage)
-            except ValueError:
-                raise ValidationError("Invalid numeric input")
+                latitude, longitude = InputValidator.validate_coordinates(latitude, longitude)
+            except ValidationError as e:
+                print(f"❌ {e}")
+                return False
             
-            maintenance_date = maintenance_date if maintenance_date else None
+            # Mileage
+            while True:
+                mileage = input("Current Mileage (km, default 0): ").strip() or "0"
+                try:
+                    mileage = InputValidator.validate_integer(mileage, 0, 999999, "Mileage")
+                    break
+                except ValidationError as e:
+                    print(f"❌ {e}")
+            
+            # Last Maintenance Date
+            maintenance_date = input("Last Maintenance Date (YYYY-MM-DD, optional): ").strip()
+            if maintenance_date:
+                try:
+                    maintenance_date = InputValidator.validate_date(maintenance_date, "Last maintenance date")
+                except ValidationError as e:
+                    print(f"❌ {e}")
+                    return False
             
             if ScooterModel.create_scooter(
                 user.username, brand, model, serial_number,

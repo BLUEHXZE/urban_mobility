@@ -14,7 +14,7 @@ python um_members.py
 ### 2. Login Test
 **Credentials:**
 - Username: `super_admin`
-- Password: `Admin_123?` (note the question mark!)
+- Password: `Admin_123?` 
 
 ### 3. Feature Testing
 
@@ -75,22 +75,24 @@ python um_members.py
 ### 4. Security Testing
 
 #### Input Validation
-Test with invalid inputs:
-- Invalid email formats
-- Wrong zip code format (should be XXXXXX)
-- Invalid phone numbers
-- SQL injection attempts in search fields
-- Null bytes in inputs
+Test with invalid inputs to ensure the system blocks or rejects them and provides clear error messages:
+- **Invalid email formats:** Try emails without '@', with spaces, or missing domain (e.g., `user@`, `user@com`, `user@.com`).
+- **Wrong zip code format:** Enter zip codes that do not match the required format (should be 4 digits followed by 2 uppercase letters, e.g., `1234AB`). Try `12345`, `abcd12`, `1234ab`, etc.
+- **Invalid phone numbers:** Enter phone numbers with less or more than 8 digits, or with letters/special characters. Only 8 digits are allowed (system adds +31-6- prefix).
+- **SQL injection attempts in search fields:** Try entering SQL code like `'; DROP TABLE users; --` or `1 OR 1=1` in any search or input field. The system should not be affected and should reject the input.
+- **Null bytes in inputs:** Try entering `\0` or copy-paste a null byte character in any input field. The system should sanitize and reject such input.
 
 #### Authentication Security
-- Test with wrong passwords (triggers suspicious activity)
-- Test with empty credentials
-- Test role-based access restrictions
+Test the following scenarios to ensure robust authentication and access control:
+- **Wrong passwords:** Attempt to log in with incorrect passwords multiple times. The system should log these as suspicious activity after several failed attempts.
+- **Empty credentials:** Try logging in with empty username or password fields. The system should reject and display an error.
+- **Role-based access restrictions:** Attempt to access features not permitted for your role (e.g., Service Engineer trying to add a new scooter). The system should deny access and log unauthorized attempts.
 
 #### Data Encryption
-1. Check database file with external SQLite browser
-2. Verify that sensitive data is encrypted
-3. Check that passwords are hashed (not visible)
+Verify that sensitive data is protected at all times:
+1. **Check database file with external SQLite browser:** Open the database file (`urban_mobility.db`) using a tool like DB Browser for SQLite. Confirm that usernames, addresses, phone numbers, and log data are not readable (appear as encrypted text).
+2. **Verify that sensitive data is encrypted:** All sensitive fields (usernames, traveller addresses, phone numbers, logs) should be encrypted in the database. Only the application can decrypt and display them.
+3. **Check that passwords are hashed (not visible):** Passwords should never be stored in plaintext or encrypted form. Only password hashes (using bcrypt) should be present in the database. You should not be able to recover the original password from the database.
 
 ### 5. Expected Behavior
 

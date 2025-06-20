@@ -22,9 +22,9 @@ class InputValidator:
             raise ValidationError("Username must be between 8-10 characters")
         
         # Pattern check: must start with letter or underscore, contain only allowed chars
-        pattern = r'^[a-zA-Z_][a-zA-Z0-9_.\']$'
+        pattern = r'^[a-zA-Z_][a-zA-Z0-9_\.\'"]{7,9}$'
         if not re.match(pattern, username):
-            raise ValidationError("Username must start with letter/underscore and contain only letters, numbers, _, ', .")
+            raise ValidationError("Username must start with a letter or underscore and can contain only letters, numbers, underscores (_), apostrophes ('), and periods (.)")
         
         return username.lower()  # Case insensitive
     

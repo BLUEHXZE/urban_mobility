@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List
 from core.db.dbconn import db
-from security import encrypt_data, decrypt_data, hash_password, verify_password
+from security import encrypt_data, decrypt_data, hash_password, verify_password, encrypt_username_deterministic
 from core.services.log_service import LogService
 from core.utils.validators import InputValidator, ValidationError
 
@@ -48,7 +48,7 @@ class UserModel:
                     return None
             
             # Query encrypted database
-            encrypted_username = encrypt_data(username.lower())
+            encrypted_username = encrypt_username_deterministic(username.lower())
             query = "SELECT * FROM users WHERE username = ?"
             result = db.execute_query(query, (encrypted_username,))
             
@@ -92,9 +92,48 @@ class UserModel:
             LogService.log_suspicious_activity(username, f"Login error: {str(e)}")
             return None
     
+    # Add a new column for encrypted username if it doesn't exist
+    @staticmethod
+    def ensure_username_enc_column():
+        try:
+            db.execute_non_query("ALTER TABLE users ADD COLUMN username_enc TEXT", ())
+        except Exception:
+            pass  # Column may already exist
+
+    @staticmethod
+    def get_all_users(admin_user: User) -> list:
+        """List all users (show real username using encrypted column)"""
+        UserModel.ensure_username_enc_column()
+        try:
+            if admin_user.role not in ['super_admin', 'system_admin']:
+                raise ValidationError("Insufficient permissions")
+            query = "SELECT id, username_enc, role, first_name, last_name, registration_date FROM users"
+            results = db.execute_query(query)
+            users = []
+            for result in results:
+                try:
+                    display_username = decrypt_data(result[1]) if result[1] else f"user_{result[0]}"
+                    user = User(
+                        id=result[0],
+                        username=display_username,
+                        role=result[2],
+                        first_name=decrypt_data(result[3]),
+                        last_name=decrypt_data(result[4]),
+                        registration_date=result[5]
+                    )
+                    users.append(user)
+                except Exception as e:
+                    print(f"Warning: Skipping user id={result[0]} due to decryption error: {e}")
+            LogService.log_activity(admin_user.username, "Viewed user list")
+            return users
+        except Exception as e:
+            LogService.log_suspicious_activity(admin_user.username, f"User list failed: {str(e)}")
+            raise e
+    
     @staticmethod
     def create_user(admin_user: User, username: str, password: str, role: str, 
                    first_name: str, last_name: str) -> bool:
+        UserModel.ensure_username_enc_column()
         """Create new user account"""
         try:
             # Validate permissions
@@ -111,7 +150,7 @@ class UserModel:
                 raise ValidationError("Invalid role")
             
             # Check if username already exists
-            encrypted_username = encrypt_data(username)
+            encrypted_username = encrypt_username_deterministic(username)
             existing_query = "SELECT COUNT(*) FROM users WHERE username = ?"
             if db.execute_scalar(existing_query, (encrypted_username,)) > 0:
                 raise ValidationError("Username already exists")
@@ -122,13 +161,16 @@ class UserModel:
             encrypted_last_name = encrypt_data(last_name)
             registration_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
+            # Store encrypted username for display
+            encrypted_username_enc = encrypt_data(username)
+            
             query = """
-            INSERT INTO users (username, password_hash, role, first_name, last_name, registration_date)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (username, username_enc, password_hash, role, first_name, last_name, registration_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """
             
             db.execute_non_query(query, (
-                encrypted_username, password_hash, role,
+                encrypted_username, encrypted_username_enc, password_hash, role,
                 encrypted_first_name, encrypted_last_name, registration_date
             ))
             
@@ -149,7 +191,7 @@ class UserModel:
             if current_user.username == 'super_admin':
                 raise ValidationError("Cannot change super admin password")
             
-            encrypted_username = encrypt_data(current_user.username)
+            encrypted_username = encrypt_username_deterministic(current_user.username)
             query = "UPDATE users SET password_hash = ? WHERE username = ?"
             
             rows_affected = db.execute_non_query(query, (password_hash, encrypted_username))
@@ -179,8 +221,7 @@ class UserModel:
                 raise ValidationError("Cannot reset super admin password")
             
             password_hash = hash_password(new_password)
-            encrypted_username = encrypt_data(target_username)
-            
+            encrypted_username = encrypt_username_deterministic(target_username)
             query = "UPDATE users SET password_hash = ? WHERE username = ?"
             rows_affected = db.execute_non_query(query, (password_hash, encrypted_username))
             
@@ -195,32 +236,33 @@ class UserModel:
             raise e
     
     @staticmethod
-    def get_all_users(admin_user: User) -> List[User]:
-        """Get all users (admin only)"""
+    def get_all_users(admin_user: User) -> list:
+        """List all users (show real username using encrypted column)"""
+        UserModel.ensure_username_enc_column()
         try:
             if admin_user.role not in ['super_admin', 'system_admin']:
                 raise ValidationError("Insufficient permissions")
-            
-            query = "SELECT * FROM users"
+            query = "SELECT id, username_enc, role, first_name, last_name, registration_date FROM users"
             results = db.execute_query(query)
-            
             users = []
             for result in results:
-                user = User(
-                    id=result[0],
-                    username=decrypt_data(result[1]),
-                    role=result[3],
-                    first_name=decrypt_data(result[4]),
-                    last_name=decrypt_data(result[5]),
-                    registration_date=result[6]
-                )
-                users.append(user)
-            
+                try:
+                    display_username = decrypt_data(result[1]) if result[1] else f"user_{result[0]}"
+                    user = User(
+                        id=result[0],
+                        username=display_username,
+                        role=result[2],
+                        first_name=decrypt_data(result[3]),
+                        last_name=decrypt_data(result[4]),
+                        registration_date=result[5]
+                    )
+                    users.append(user)
+                except Exception as e:
+                    print(f"Warning: Skipping user id={result[0]} due to decryption error: {e}")
             LogService.log_activity(admin_user.username, "Viewed user list")
             return users
-            
         except Exception as e:
-            LogService.log_suspicious_activity(admin_user.username, f"Get users failed: {str(e)}")
+            LogService.log_suspicious_activity(admin_user.username, f"User list failed: {str(e)}")
             raise e
     
     @staticmethod
@@ -236,7 +278,7 @@ class UserModel:
             if target_username == 'super_admin':
                 raise ValidationError("Cannot delete super admin")
             
-            encrypted_username = encrypt_data(target_username)
+            encrypted_username = encrypt_username_deterministic(target_username)
             query = "DELETE FROM users WHERE username = ?"
             
             rows_affected = db.execute_non_query(query, (encrypted_username,))
@@ -259,29 +301,58 @@ class UserModel:
             first_name = InputValidator.validate_name(first_name, "First name")
             last_name = InputValidator.validate_name(last_name, "Last name")
             target_username = InputValidator.sanitize_input(target_username).lower()
-            
-            # Check permissions
-            if admin_user.username != target_username and admin_user.role not in ['super_admin', 'system_admin']:
+
+            # Check permissions (robust, role-based)
+            # Fetch target user's role
+            encrypted_target_username = encrypt_username_deterministic(target_username)
+            target_user_row = db.execute_query("SELECT role FROM users WHERE username = ?", (encrypted_target_username,))
+            if not target_user_row:
+                raise ValidationError("Target user does not exist")
+            target_role = target_user_row[0][0]
+
+            # Permission logic:
+            # - super_admin can update anyone
+            # - system_admin can update themselves and service_engineers
+            # - service_engineer can only update themselves
+            if admin_user.role == 'super_admin':
+                pass  # can update anyone
+            elif admin_user.role == 'system_admin':
+                if target_role == 'system_admin' and admin_user.username != target_username:
+                    raise ValidationError("System admin can only update themselves or service engineers")
+                if target_role == 'super_admin':
+                    raise ValidationError("Cannot update super admin")
+            elif admin_user.role == 'service_engineer':
+                if admin_user.username != target_username:
+                    raise ValidationError("Service engineer can only update their own profile")
+            else:
                 raise ValidationError("Insufficient permissions")
-            
-            encrypted_username = encrypt_data(target_username)
+
+            # Use deterministic encryption for username lookup
+            encrypted_username = encrypt_username_deterministic(target_username)
             encrypted_first_name = encrypt_data(first_name)
             encrypted_last_name = encrypt_data(last_name)
-            
+
             query = "UPDATE users SET first_name = ?, last_name = ? WHERE username = ?"
             rows_affected = db.execute_non_query(query, (
                 encrypted_first_name, encrypted_last_name, encrypted_username
             ))
-            
+
             if rows_affected > 0:
                 LogService.log_activity(admin_user.username, f"Updated profile for {target_username}")
                 return True
-            
+
             return False
-            
         except Exception as e:
             LogService.log_suspicious_activity(admin_user.username, f"Profile update failed: {str(e)}")
             raise e
+    
+    @staticmethod
+    def username_exists(username: str) -> bool:
+        """Check if a username already exists in the database (case-insensitive, encrypted)"""
+        encrypted_username = encrypt_data(username.lower())
+        query = "SELECT COUNT(*) FROM users WHERE username = ?"
+        count = db.execute_scalar(query, (encrypted_username,))
+        return count > 0
     
     @staticmethod
     def _can_create_user(admin_role: str, target_role: str) -> bool:
@@ -302,10 +373,114 @@ class UserModel:
             return True
         elif admin_role == 'system_admin':
             # System admin can only delete service engineers
-            encrypted_username = encrypt_data(target_username)
+            encrypted_username = encrypt_username_deterministic(target_username)
             query = "SELECT role FROM users WHERE username = ?"
             result = db.execute_query(query, (encrypted_username,))
             if result:
                 return result[0][0] == 'service_engineer'
         
         return False
+    
+    @staticmethod
+    def delete_user_by_id(admin_user: User, user_id: int) -> bool:
+        """Delete user account by user ID (admin action)"""
+        try:
+            # Fetch target user info
+            user_row = db.execute_query("SELECT username, role FROM users WHERE id = ?", (user_id,))
+            if not user_row:
+                raise ValidationError("Target user does not exist")
+            target_username, target_role = user_row[0]
+            # Prevent deleting super_admin
+            if target_username == encrypt_username_deterministic('super_admin'):
+                raise ValidationError("Cannot delete super admin")
+            # Permission check
+            if admin_user.role == 'super_admin':
+                pass
+            elif admin_user.role == 'system_admin':
+                if target_role != 'service_engineer':
+                    raise ValidationError("System admin can only delete service engineers")
+            else:
+                raise ValidationError("Insufficient permissions")
+            # Delete
+            rows_affected = db.execute_non_query("DELETE FROM users WHERE id = ?", (user_id,))
+            if rows_affected > 0:
+                LogService.log_user_deletion(admin_user.username, f"id={user_id}")
+                return True
+            return False
+        except Exception as e:
+            LogService.log_suspicious_activity(admin_user.username, f"User deletion by id failed: {str(e)}")
+            raise e
+    
+    @staticmethod
+    def update_user_profile_by_id(admin_user: User, user_id: int, first_name: str, last_name: str) -> bool:
+        """Update user profile by user ID (admin action)"""
+        try:
+            # Validate inputs
+            first_name = InputValidator.validate_name(first_name, "First name")
+            last_name = InputValidator.validate_name(last_name, "Last name")
+            # Fetch target user info
+            user_row = db.execute_query("SELECT username, role FROM users WHERE id = ?", (user_id,))
+            if not user_row:
+                raise ValidationError("Target user does not exist")
+            target_username, target_role = user_row[0]
+            # Permission logic (same as update_user_profile)
+            if admin_user.role == 'super_admin':
+                pass
+            elif admin_user.role == 'system_admin':
+                if target_role == 'system_admin' and admin_user.username != target_username:
+                    raise ValidationError("System admin can only update themselves or service engineers")
+                if target_role == 'super_admin':
+                    raise ValidationError("Cannot update super admin")
+            elif admin_user.role == 'service_engineer':
+                if admin_user.username != target_username:
+                    raise ValidationError("Service engineer can only update their own profile")
+            else:
+                raise ValidationError("Insufficient permissions")
+            encrypted_first_name = encrypt_data(first_name)
+            encrypted_last_name = encrypt_data(last_name)
+            query = "UPDATE users SET first_name = ?, last_name = ? WHERE id = ?"
+            rows_affected = db.execute_non_query(query, (
+                encrypted_first_name, encrypted_last_name, user_id
+            ))
+            if rows_affected > 0:
+                LogService.log_activity(admin_user.username, f"Updated profile for id={user_id}")
+                return True
+            return False
+        except Exception as e:
+            LogService.log_suspicious_activity(admin_user.username, f"Profile update by id failed: {str(e)}")
+            raise e
+    
+    @staticmethod
+    def reset_user_password_by_id(admin_user: User, user_id: int, new_password: str) -> bool:
+        """Reset user password by user ID (admin action)"""
+        try:
+            # Validate password
+            InputValidator.validate_password(new_password)
+            # Fetch target user info
+            user_row = db.execute_query("SELECT username, role FROM users WHERE id = ?", (user_id,))
+            if not user_row:
+                raise ValidationError("Target user does not exist")
+            target_username, target_role = user_row[0]
+            # Permission logic (same as update/delete)
+            if admin_user.role == 'super_admin':
+                pass
+            elif admin_user.role == 'system_admin':
+                if target_role == 'system_admin' and admin_user.username != target_username:
+                    raise ValidationError("System admin can only reset their own or service engineer passwords")
+                if target_role == 'super_admin':
+                    raise ValidationError("Cannot reset super admin password")
+            elif admin_user.role == 'service_engineer':
+                if admin_user.username != target_username:
+                    raise ValidationError("Service engineer can only reset their own password")
+            else:
+                raise ValidationError("Insufficient permissions")
+            password_hash = hash_password(new_password)
+            query = "UPDATE users SET password_hash = ? WHERE id = ?"
+            rows_affected = db.execute_non_query(query, (password_hash, user_id))
+            if rows_affected > 0:
+                LogService.log_activity(admin_user.username, f"Reset password for id={user_id}")
+                return True
+            return False
+        except Exception as e:
+            LogService.log_suspicious_activity(admin_user.username, f"Password reset by id failed: {str(e)}")
+            raise e
